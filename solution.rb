@@ -9,8 +9,8 @@ require 'json'
   "color/0 +1 color/1",
   "smoke/0 == pet/2",
   "smoke/1 == color/4",
-  "drink/1 == number/3",
-  "nationality/3 == number/1",
+  "drink/1 == number/2",
+  "nationality/3 == number/0",
   "smoke/2 next pet/3",
   "smoke/1 next pet/4",
   "smoke/4 == drink/2",
@@ -56,8 +56,30 @@ def foundCertain(houseNum,key,value,ds)
   warn "num: #{houseNum}, key: #{key}, value: #{value}"
   ds[houseNum][key]["good"] = value
   ds.each do |house|
-    if house["number"]["good"] != houseNum && !house[key]["bad"].include?(value)
+    if getHouseNum(house) != houseNum && !house[key]["bad"].include?(value)
+      warn "BAD: #{getHouseNum(house)}, #{value}"
       house[key]["bad"] << value
+    end
+  end
+end
+
+def foundFailure(houseNum,key,value,ds)
+  ds[houseNum][key]["bad"] << value if !ds[houseNum][key]["bad"].include?(value)
+end
+
+# If houseNum is at the end, go in 1.
+# If houseNum is in the middle and one of the neighbors is already determined for that key, populate the other one
+def foundNext(houseNum,key,value,ds)
+  warn "#{houseNum},#{key},#{value}"
+  if houseNum == 0
+    foundCertain(1, key,value,ds)
+  elsif houseNum == @numHouses - 1
+    foundCertain(3, key,value,ds)
+  else
+    if !ds[houseNum + 1][key]["good"].nil? && ds[houseNum + 1][key]["good"] != value
+      foundCertain(houseNum - 1, key, value, ds)
+    elsif !ds[houseNum - 1][key]["good"].nil? && ds[houseNum - 1][key]["good"] != value
+      foundCertain(houseNum + 1, key, value, ds)
     end
   end
 end
@@ -68,7 +90,7 @@ end
 
 def applyConstraint(constraint, ds)
   if (/==/.match(constraint))
-    warn "Constriant: #{constraint}"
+    #warn "Constriant: #{constraint}"
     # For the == case, check if either of the cases is satisfied in any house and apply the other
     captured = /([^\/]*)\/([^\s]*) == ([^\/]*)\/([^\s]*)/.match(constraint)
     key1 = captured[1]
@@ -80,15 +102,37 @@ def applyConstraint(constraint, ds)
         foundCertain(getHouseNum(house),key1,value1,ds)
       elsif house[key1]["good"] == value1
         foundCertain(getHouseNum(house),key2,value2,ds)
-      end      
+      end
+      if !house[key1]["good"].nil? && !house[key1]["good"] != value1
+        foundFailure(getHouseNum(house),key2,value2,ds)
+      elsif !house[key2]["good"].nil? && house[key2]["good"] != value2
+        foundFailure(getHouseNum(house),key1,value1,ds)
+      end
     end      
+  elsif (/next/.match(constraint))
+    warn "Constriant: #{constraint}"
+   # for the next case, see if either of the neighbors of these properties hold
+    captured = /([^\/]*)\/([^\s]*) next ([^\/]*)\/([^\s]*)/.match(constraint)
+    key1 = captured[1]
+    value1 = captured[2].to_i
+    key2 = captured[3]
+    value2 = captured[4].to_i
+    ds.each do |house|
+      if house[key2]["good"] == value2
+  warn "found a next"
+        foundNext(getHouseNum(house),key1,value1,ds)
+      elsif house[key1]["good"] == value1
+  warn "found a next1"
+        foundNext(getHouseNum(house),key2,value2,ds)
+      end
+    end
   end
 end
 
 def run()
   ds = initDataStructure()
   iterationCycle = 1
-#  while true
+  3.times do |loopIndex|
     warn "cycle: #{iterationCycle}"
     iterationCycle += 1
     @constraints.each do |constraint|
@@ -97,7 +141,7 @@ def run()
       # Third, see if inverse of rule applies
       applyConstraint(constraint, ds)
     end
-#  end
+  end
    return ds
 end
 
@@ -111,11 +155,11 @@ def prettyPrint(ds)
   ds.each do |house|
     puts "\t For house: #{getHouseNum(house)}"
     house.each do |k,v|
-      badLookup = ""
+      badLookup = []
       v['bad'].each do |bad| 
-        badLookup += lookupAttr(k,bad).to_s
+        badLookup << lookupAttr(k,bad).to_s
       end
-      puts "\t\t Attr: #{k} Good: #{lookupAttr(k,v['good'])}, \t\tBad: #{badLookup}"
+      puts "\t\t Attr: #{k} Good: #{lookupAttr(k,v['good'])}, \t\tBad: #{badLookup.join(',')}"
     end
   end
 end
