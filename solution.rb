@@ -54,27 +54,31 @@ end
 
 # Add key in correct place and add to bad in all others
 def foundCertain(houseNum,key,value,ds)
-  warn "num: #{houseNum}, key: #{key}, value: #{value}"
-  ds[houseNum][key]["good"] = value
+  if ds[houseNum][key]["good"].nil? || ds[houseNum][key]["good"] == value
+    ds[houseNum][key]["good"] = value
+  else
+    raise "you've reached an incorrect solution"
+  end
   @numHouses.times do |index|
-    ds[houseNum][key]["bad"] << index if !ds[houseNum][key]["bad"].include?(index) && value != index
+    foundFailure(houseNum, key, index, ds) if !ds[houseNum][key]["bad"].include?(index) && value != index
   end
   ds.each do |house|
     if getHouseNum(house) != houseNum && !house[key]["bad"].include?(value)
-      warn "BAD: #{getHouseNum(house)}, #{value}"
-      house[key]["bad"] << value
+      foundFailure(getHouseNum(house), key, value, ds)
     end
   end
 end
 
 def foundFailure(houseNum,key,value,ds)
+  if houseNum < 0 || houseNum >= @numHouses
+    raise "out of bounds"
+  end
   ds[houseNum][key]["bad"] << value if !ds[houseNum][key]["bad"].include?(value)
 end
 
 # If houseNum is at the end, go in 1.
 # If houseNum is in the middle and one of the neighbors is already determined for that key, populate the other one
 def foundNext(houseNum,key,value,ds)
-  warn "#{houseNum},#{key},#{value}"
   if houseNum == 0
     foundCertain(1, key,value,ds)
   elsif houseNum == @numHouses - 1
@@ -94,7 +98,6 @@ end
 
 def applyConstraint(constraint, ds)
   if (/==/.match(constraint))
-    #warn "Constriant: #{constraint}"
     # For the == case, check if either of the cases is satisfied in any house and apply the other
     captured = /([^\/]*)\/([^\s]*) == ([^\/]*)\/([^\s]*)/.match(constraint)
     key1 = captured[1]
@@ -114,7 +117,6 @@ def applyConstraint(constraint, ds)
       end
     end      
   elsif (/next/.match(constraint))
-    warn "Constriant: #{constraint}"
    # for the next case, see if either of the neighbors of these properties hold
     captured = /([^\/]*)\/([^\s]*) next ([^\/]*)\/([^\s]*)/.match(constraint)
     key1 = captured[1]
@@ -129,7 +131,6 @@ def applyConstraint(constraint, ds)
       end
     end
   elsif (/\+1/.match(constraint))
-    warn "Constriant: #{constraint}"
    # for the next case, see if either of the neighbors of these properties hold
     captured = /([^\/]*)\/([^\s]*) \+1 ([^\/]*)\/([^\s]*)/.match(constraint)
     key1 = captured[1]
@@ -144,10 +145,10 @@ def applyConstraint(constraint, ds)
       elsif house[key1]["good"] == value1
         foundCertain(getHouseNum(house) + 1,key2,value2,ds)
       end
-      if !house[key2]["good"].nil? && house[key2]["good"] != value2
+      if !house[key2]["good"].nil? && house[key2]["good"] != value2 && getHouseNum(house) != 0
         foundFailure(getHouseNum(house) - 1,key1,value1,ds)
       end
-      if !house[key1]["good"].nil? && house[key1]["good"] != value1
+      if !house[key1]["good"].nil? && house[key1]["good"] != value1 && getHouseNum(house) != @numHouses - 1
         foundFailure(getHouseNum(house) + 1,key2,value2,ds) 
       end
     end
@@ -183,18 +184,30 @@ def run(ds = nil)
       finished = confirmComplete(ds)
       # if we've reached a point where we can no longer populate attributes but we're not finished, take a guess
       if !finished
-        tempDS = ds.clone   
-        tempDS.each do |house|
+        attemptedField = false
+        ds.each do |house|
           house.each do |attr,val|
+            next if attemptedField
             if val["good"].nil?
               ((0..@numHouses - 1).to_a - val["bad"]).each do |available|
-                val["good"] = available
-                run(tempDS)
+                attemptedField = true
+                tempDS = JSON.parse(ds.to_json)
+                warn "ASSUMING: house #{getHouseNum(house)}, attr #{attr}, value: #{lookupAttr(attr,available)}"
+                foundCertain(getHouseNum(house),attr,available,tempDS)
+                begin
+                  return run(tempDS)
+                 
+                rescue Exception => e
+                  tempDS[getHouseNum(house)][attr]["good"] = nil
+                  warn "TRYING NEXT ASSUMPTION: #{e}"
+                  next
+                end
               end
             end
           end
         end
       end
+      raise "no solution available" if !confirmComplete(ds)
       return ds
     else
       oldDS = prettyPrint(ds)
@@ -229,5 +242,7 @@ def prettyPrint(ds)
   end
   return returnString
 end
- 
+
+bTime = Time.now 
 puts prettyPrint(run())
+warn "TIME: #{Time.now - bTime}"
