@@ -1,5 +1,6 @@
 # http://en.wikipedia.org/wiki/Zebra_Puzzle#Step_1
 require 'json' 
+require 'hashdiff'
 
 @constraints = [
   "nationality/0 == color/2",
@@ -55,6 +56,9 @@ end
 def foundCertain(houseNum,key,value,ds)
   warn "num: #{houseNum}, key: #{key}, value: #{value}"
   ds[houseNum][key]["good"] = value
+  @numHouses.times do |index|
+    ds[houseNum][key]["bad"] << index if !ds[houseNum][key]["bad"].include?(index) && value != index
+  end
   ds.each do |house|
     if getHouseNum(house) != houseNum && !house[key]["bad"].include?(value)
       warn "BAD: #{getHouseNum(house)}, #{value}"
@@ -103,7 +107,7 @@ def applyConstraint(constraint, ds)
       elsif house[key1]["good"] == value1
         foundCertain(getHouseNum(house),key2,value2,ds)
       end
-      if !house[key1]["good"].nil? && !house[key1]["good"] != value1
+      if !house[key1]["good"].nil? && house[key1]["good"] != value1
         foundFailure(getHouseNum(house),key2,value2,ds)
       elsif !house[key2]["good"].nil? && house[key2]["good"] != value2
         foundFailure(getHouseNum(house),key1,value1,ds)
@@ -119,21 +123,54 @@ def applyConstraint(constraint, ds)
     value2 = captured[4].to_i
     ds.each do |house|
       if house[key2]["good"] == value2
-  warn "found a next"
         foundNext(getHouseNum(house),key1,value1,ds)
       elsif house[key1]["good"] == value1
-  warn "found a next1"
         foundNext(getHouseNum(house),key2,value2,ds)
+      end
+    end
+  elsif (/\+1/.match(constraint))
+    warn "Constriant: #{constraint}"
+   # for the next case, see if either of the neighbors of these properties hold
+    captured = /([^\/]*)\/([^\s]*) \+1 ([^\/]*)\/([^\s]*)/.match(constraint)
+    key1 = captured[1]
+    value1 = captured[2].to_i
+    key2 = captured[3]
+    value2 = captured[4].to_i
+    ds.each do |house|
+      foundFailure(0,key2,value2,ds)
+      foundFailure(@numHouses - 1, key1, value1, ds)
+      if house[key2]["good"] == value2
+        foundCertain(getHouseNum(house) - 1,key1,value1,ds)
+      elsif house[key1]["good"] == value1
+        foundCertain(getHouseNum(house) + 1,key2,value2,ds)
+      end
+      if !house[key2]["good"].nil? && house[key2]["good"] != value2
+        foundFailure(getHouseNum(house) - 1,key1,value1,ds)
+      end
+      if !house[key1]["good"].nil? && house[key1]["good"] != value1
+        foundFailure(getHouseNum(house) + 1,key2,value2,ds) 
       end
     end
   end
 end
 
-def run()
-  ds = initDataStructure()
+def checkBads(ds)
+  ds.each do |house|
+    house.each do |attr,val|
+      if val["bad"].length == @numHouses - 1
+        certainValue = ((0..@numHouses - 1).to_a - val["bad"])
+        foundCertain(getHouseNum(house), attr, certainValue[0], ds)
+      end
+    end
+  end
+end
+
+def run(ds = nil)
+  ds = initDataStructure() if ds.nil?
+  oldDS = prettyPrint(ds)
   iterationCycle = 1
-  3.times do |loopIndex|
-    warn "cycle: #{iterationCycle}"
+  while (true)
+    warn "CYCLE: #{iterationCycle}"
     iterationCycle += 1
     @constraints.each do |constraint|
       # First, break down information
@@ -141,8 +178,36 @@ def run()
       # Third, see if inverse of rule applies
       applyConstraint(constraint, ds)
     end
+    checkBads(ds)
+    if oldDS == prettyPrint(ds)
+      finished = confirmComplete(ds)
+      # if we've reached a point where we can no longer populate attributes but we're not finished, take a guess
+      if !finished
+        tempDS = ds.clone   
+        tempDS.each do |house|
+          house.each do |attr,val|
+            if val["good"].nil?
+              ((0..@numHouses - 1).to_a - val["bad"]).each do |available|
+                val["good"] = available
+                run(tempDS)
+              end
+            end
+          end
+        end
+      end
+      return ds
+    else
+      oldDS = prettyPrint(ds)
+    end
   end
-   return ds
+end
+
+def confirmComplete(ds)
+  ds.each do |house|
+    house.each do |attr,val|
+      return false if val["good"].nil?
+    end
+  end
 end
 
 def lookupAttr(key, index)
@@ -151,17 +216,18 @@ def lookupAttr(key, index)
 end
 
 def prettyPrint(ds)
-  warn "Here's what we know: "
+  returnString = "Here's what we know: \n"
   ds.each do |house|
-    puts "\t For house: #{getHouseNum(house)}"
+    returnString +=  "\t For house: #{getHouseNum(house)}\n"
     house.each do |k,v|
       badLookup = []
       v['bad'].each do |bad| 
         badLookup << lookupAttr(k,bad).to_s
       end
-      puts "\t\t Attr: #{k} Good: #{lookupAttr(k,v['good'])}, \t\tBad: #{badLookup.join(',')}"
+      returnString +=  "\t\t Attr: #{k} Good: #{lookupAttr(k,v['good'])}, \t\tBad: #{badLookup.join(',')}\n"
     end
   end
+  return returnString
 end
  
-prettyPrint(run())
+puts prettyPrint(run())
